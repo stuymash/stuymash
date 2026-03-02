@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STUYMASH</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --text-color: #333;
+            --primary: #4A90E2;
+            --card-bg: #fff;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        header { text-align: center; margin-bottom: 30px; }
+        select {
+            padding: 10px 15px; font-size: 16px; border-radius: 8px;
+            border: 1px solid #ccc; cursor: pointer; margin-top: 10px;
+        }
+        main {
+            display: flex; flex-direction: column; align-items: center;
+            width: 100%; max-width: 800px;
+        }
+        .arena {
+            display: flex; justify-content: center; gap: 20px;
+            margin-bottom: 20px; width: 100%;
+        }
+        .card {
+            background: var(--card-bg); border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 20px;
+            text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+            flex: 1; max-width: 300px; min-height: 150px; 
+            display: flex; align-items: center; justify-content: center;
+        }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 8px 15px rgba(0,0,0,0.15); }
+        .card h3 { margin: 0; font-size: 28px; }
+        .or-text { display: flex; align-items: center; font-weight: bold; font-size: 24px; color: #888; }
+
+        .skip-btn {
+            background-color: transparent; border: 2px solid #ccc; color: #888;
+            padding: 10px 30px; font-size: 16px; border-radius: 8px; cursor: pointer;
+            margin-bottom: 40px; transition: all 0.2s; font-weight: bold;
+        }
+        .skip-btn:hover { background-color: #e2e2e2; color: #333; border-color: #aaa; }
+        
+        .leaderboard {
+            width: 100%; 
+            background: var(--card-bg); 
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+            padding: 20px; 
+            box-sizing: border-box;
+            max-height: 600px; 
+            overflow-y: auto; 
+        }
+        .leaderboard h2 { margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px;}
+        .rank-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .rank-item:last-child { border-bottom: none; }
+        .rank-name { font-weight: bold; }
+        .rank-score { color: var(--primary); }
+        .suggestion-box {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 30px;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .suggestion-box input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        .suggestion-box button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+
+        .suggestion-box button:hover {
+            background-color: #357abd;
+        }
+
+        #suggestion-status {
+            margin-top: 10px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>STUYMASH</h1>
+        <p>Choose a category and choose the one you like better. Skip if you know neither.</p>
+        <select id="category-select" onchange="changeCategory()">
+            <option value="Teacher">Teachers</option>
+            <option value="Country">Countries</option>
+            <option value="Insta Following">Insta Following</option>
+        </select>
+    </header>
+
+    <main>
+        <div class="arena" id="arena">
+            <p>Loading...</p>
+        </div>
+
+        <button class="skip-btn" id="skip-btn" onclick="skipPair()" style="display: none;">Skip</button>
+
+        <div class="leaderboard">
+            <h2>Leaderboard: <span id="current-category-title">Teachers</span></h2>
+            <div id="leaderboard-list"></div>
+            <button id="load-more-btn" onclick="loadMoreLeaderboard()" style="display: none; width: 100%; margin-top: 15px; padding: 10px; cursor: pointer;">Load More</button>
+        </div>
+
+        <div class="suggestion-box">
+            <h3>Submit a Suggestion</h3>
+            <input type="text" id="suggestion-input" placeholder="Type your suggestion here...">
+            <button onclick="submitSuggestion()">Submit</button>
+            <p id="suggestion-status"></p>
+        </div>
+    </main>
+
+    <script>
+        const SUPABASE_URL = 'https://tafkzcsqevcepnbdhyym.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_XA7A-5a7Vdx7m3cO6zsubw_dyj-G0M-';
+        const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let currentCategory = document.getElementById('category-select').value;
+        let currentItems = [];
+        let itemA = null;
+        let itemB = null;
+        let isVoting = false;
+        let pairStartTime = 0;
+        let leaderboardOffset = 0;
+        const LEADERBOARD_LIMIT = 200; 
+
+        async function updateLeaderboard(reset = true) {
+            const list = document.getElementById('leaderboard-list');
+            const loadMoreBtn = document.getElementById('load-more-btn');
+
+            if (reset) {
+                leaderboardOffset = 0;
+                list.innerHTML = 'Loading...'; 
+            }
+
+            const { data, error } = await db
+                .from('items')
+                .select('name, rating, matches')
+                .eq('category', currentCategory)
+                .order('rating', { ascending: false })
+                .range(leaderboardOffset, leaderboardOffset + LEADERBOARD_LIMIT - 1);
+
+            if (error) {
+                console.error(error);
+                list.innerHTML = '<p style="color:red;">Error loading leaderboard.</p>';
+                return;
+            }
+
+            if (reset) list.innerHTML = '';
+
+            data.forEach((item, index) => {
+                const globalRank = leaderboardOffset + index + 1;
+                list.innerHTML += `
+                    <div class="rank-item">
+                        <span class="rank-name">${globalRank}. ${item.name} <small style="color:#aaa">(${item.matches} matches)</small></span>
+                        <span class="rank-score">${Math.round(item.rating)}</span>
+                    </div>
+                `;
+            });
+
+            if (data.length === LEADERBOARD_LIMIT) {
+                loadMoreBtn.style.display = 'block';
+            } else {
+                loadMoreBtn.style.display = 'none';
+            }
+        }
+
+        function loadMoreLeaderboard() {
+            leaderboardOffset += LEADERBOARD_LIMIT;
+            updateLeaderboard(false);
+        }
+
+        async function submitSuggestion() {
+            const input = document.getElementById('suggestion-input');
+            const status = document.getElementById('suggestion-status');
+            const text = input.value.trim();
+
+            if (!text) {
+                status.innerText = "Please enter a suggestion first.";
+                status.style.color = "red";
+                return;
+            }
+
+            status.innerText = "Submitting...";
+            status.style.color = "#888";
+
+            const { data, error } = await db.functions.invoke('submit-suggestion', {
+                body: { suggestion: text }
+            });
+
+            if (error || (data && data.error)) {
+                console.error('Error submitting suggestion:', error || data.error);
+                status.innerText = "Error submitting suggestion. Try again.";
+                status.style.color = "red";
+            } else {
+                status.innerText = "Suggestion submitted successfully!";
+                status.style.color = "green";
+                input.value = '';
+                
+                setTimeout(() => {
+                    status.innerText = "";
+                }, 3000);
+            }
+        }
+
+        async function init() {
+            await loadItemsForCategory();
+            updateLeaderboard();
+        }
+
+        async function changeCategory() {
+            currentCategory = document.getElementById('category-select').value;
+            document.getElementById('current-category-title').innerText = currentCategory;
+            await loadItemsForCategory();
+            updateLeaderboard();
+        }
+
+        async function loadItemsForCategory() {
+            document.getElementById('arena').innerHTML = '<p>Loading items...</p>';
+            document.getElementById('skip-btn').style.display = 'none';
+            
+            const { data, error } = await db
+                .from('items')
+                .select('*')
+                .eq('category', currentCategory);
+
+            if (error) {
+                console.error('Error fetching items:', error);
+                document.getElementById('arena').innerHTML = '<p>Error loading items.</p>';
+                return;
+            }
+
+            currentItems = data;
+
+            if (currentItems.length < 2) {
+                document.getElementById('arena').innerHTML = '<p>Not enough items in this category.</p>';
+                return;
+            }
+
+            document.getElementById('skip-btn').style.display = 'block';
+            pickNewPair();
+        }
+
+        function pickNewPair() {
+            let idxA = Math.floor(Math.random() * currentItems.length);
+            let idxB = Math.floor(Math.random() * currentItems.length);
+            
+            while (idxA === idxB) {
+                idxB = Math.floor(Math.random() * currentItems.length);
+            }
+
+            itemA = currentItems[idxA];
+            itemB = currentItems[idxB];
+            renderArena();
+            pairStartTime = Date.now();
+        }
+
+        function renderArena() {
+            const arena = document.getElementById('arena');
+            arena.innerHTML = `
+                <div class="card" onclick="castVote('${itemA.id}', '${itemB.id}')">
+                    <h3>${itemA.name}</h3>
+                </div>
+                <div class="or-text">VS</div>
+                <div class="card" onclick="castVote('${itemB.id}', '${itemA.id}')">
+                    <h3>${itemB.name}</h3>
+                </div>
+            `;
+        }
+
+        function skipPair() {
+            if (isVoting) return;
+            pickNewPair();
+        }
+
+        function castVote(winnerId, loserId) {
+            if (isVoting) return;
+            isVoting = true;
+
+            const voteDurationMs = Date.now() - pairStartTime;
+
+            pickNewPair();
+            
+            isVoting = false;
+
+            processVoteInBackground(winnerId, loserId, voteDurationMs);
+        }
+
+        async function processVoteInBackground(winnerId, loserId, voteDurationMs) {
+            const clientMetadata = {
+                user_agent: navigator.userAgent,
+                vote_duration_ms: voteDurationMs
+            };
+
+            const { data, error } = await db.functions.invoke('vote', {
+                body: { 
+                    winnerId: winnerId, 
+                    loserId: loserId, 
+                    clientMetadata: clientMetadata
+                }
+            });
+
+            if (error || (data && data.error)) {
+                console.error('Error details:', error || data?.error);
+                
+                if (data?.error === 'banned') {
+                    alert('You have been banned from voting.');
+                    document.getElementById('arena').innerHTML = '<p style="color:red; font-weight:bold;">Please reconsider your actions before doing something similar again.</p>';
+                    document.getElementById('skip-btn').style.display = 'none';
+                } else if (data?.error === 'Voting too fast.') {
+                    console.warn("Voted too fast, ignored");
+                } else {
+                    console.error('Vote failed: ' + (data?.error || error?.message || 'Check console'));
+                }
+            } else {
+                updateLeaderboard();
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
